@@ -37,6 +37,19 @@
             app:fabSize="normal"
             app:fabCustomSize="45dp"
             app:maxImageSize="37dp"/>
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fb_reload"
+            android:backgroundTint="#ff7a00"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|right"
+            android:layout_marginBottom="20dp"
+            android:layout_marginRight="10dp"
+            android:soundEffectsEnabled="true"
+            app:fabSize="normal"
+            app:fabCustomSize="45dp"
+            app:maxImageSize="37dp"/>
     </FrameLayout>
 
     <LinearLayout
@@ -91,6 +104,11 @@
                 android:layout_gravity="center"
                 android:text="검색된 메시지가 없습니다."
                 android:textSize="16dp" />
+            <com.baoyz.swipemenulistview.SwipeMenuListView
+                android:id="@+id/myCommentContents"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+            </com.baoyz.swipemenulistview.SwipeMenuListView>
             <ListView
                 android:id="@+id/commentContents"
                 android:layout_width="match_parent"
