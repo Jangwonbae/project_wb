@@ -6,15 +6,20 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.util.Log;
 
+import com.example.bewith.javaclass.Constants;
+import com.example.bewith.javaclass.GlobalList;
+import com.example.bewith.listclass.CommentData;
 import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.common.api.ResolvableApiException;
 import com.google.android.gms.location.FusedLocationProviderClient;
@@ -30,6 +35,17 @@ import com.google.android.gms.location.SettingsClient;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+
 public class SplashActivity extends AppCompatActivity {
     private static final String TAG = SplashActivity.class.getSimpleName();
     private static final int GPS_UTIL_LOCATION_PERMISSION_REQUEST_CODE = 100;
@@ -42,11 +58,12 @@ public class SplashActivity extends AppCompatActivity {
     private FusedLocationProviderClient fusedLocationProviderClient;
     private LocationRequest locationRequest;
     private double longitude, latitude;
-
+    private static String IP_ADDRESS;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_splash);
+        IP_ADDRESS= Constants.IP_ADDRESS;
     }
 
     @Override
@@ -163,6 +180,79 @@ public class SplashActivity extends AppCompatActivity {
             longitude = locationResult.getLastLocation().getLongitude();
             latitude = locationResult.getLastLocation().getLatitude();
             fusedLocationProviderClient.removeLocationUpdates(locationCallback);
+            GetComment getComment = new GetComment();
+            getComment.execute( "http://" + IP_ADDRESS + "/getComment.php", "");
+
+        }
+
+        @Override
+        public void onLocationAvailability(LocationAvailability locationAvailability) {
+            super.onLocationAvailability(locationAvailability);
+            Log.i(TAG, "onLocationAvailability - " + locationAvailability);
+        }
+    };
+    public class GetComment extends AsyncTask<String, Void, String> {
+        private Context context;
+        String errorString = null;
+        private String mJsonString;
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+            if (result == null){
+            }
+            else {
+                mJsonString = result;
+                showResult();
+            }
+
+        }
+        private void showResult(){
+
+            String TAG_JSON="comment";
+            String TAG_ID = "id";
+            String TAG_UUID = "UUID";
+            String TAG_category = "category";
+            String TAG_text = "text";
+            String TAG_STR_LATITUDE = "str_latitude";
+            String TAG_STR_LONGITUDE ="str_longitude";
+            ((GlobalList) getApplication() ).cleancData();
+
+            try {
+                JSONObject jsonObject = new JSONObject(mJsonString);
+                JSONArray jsonArray = jsonObject.getJSONArray(TAG_JSON);
+                for(int i=0;i<jsonArray.length();i++){
+
+                    JSONObject item = jsonArray.getJSONObject(i);
+                    int id = item.getInt(TAG_ID);
+                    String UUID = item.getString(TAG_UUID);
+                    int category=0;
+                    switch (item.getString(TAG_category)){
+                        case "리뷰":
+                            category = 0;
+                            break;
+                        case "꿀팁":
+                            category = 1;
+                            break;
+                        case "기록":
+                            category = 2;
+                            break;
+
+                    }
+                    String text = item.getString(TAG_text);
+                    String str_latitude = item.getString(TAG_STR_LATITUDE);
+                    String str_longitude = item.getString(TAG_STR_LONGITUDE);
+                    ((GlobalList) getApplication() ).setcData(new CommentData(id,UUID,category,text,str_latitude,str_longitude));
+                }
+
+            } catch (JSONException e) {
+                Log.d(TAG, "showResult : ", e);
+            }
             //위치값을 메인 엑티비티로 보내고 엑티비티 이동
             Intent intent = new Intent(SplashActivity.this, MainActivity.class);
             intent.putExtra("latitude", latitude);
@@ -172,9 +262,66 @@ public class SplashActivity extends AppCompatActivity {
         }
 
         @Override
-        public void onLocationAvailability(LocationAvailability locationAvailability) {
-            super.onLocationAvailability(locationAvailability);
-            Log.i(TAG, "onLocationAvailability - " + locationAvailability);
+        protected String doInBackground(String... params) {
+
+            String serverURL = params[0];
+            String postParameters = params[1];
+
+
+            try {
+
+                URL url = new URL(serverURL);
+                HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
+
+
+                httpURLConnection.setReadTimeout(5000);
+                httpURLConnection.setConnectTimeout(5000);
+                httpURLConnection.setRequestMethod("POST");
+                httpURLConnection.setDoInput(true);
+                httpURLConnection.connect();
+
+
+                OutputStream outputStream = httpURLConnection.getOutputStream();
+                outputStream.write(postParameters.getBytes("UTF-8"));
+                outputStream.flush();
+                outputStream.close();
+
+
+                int responseStatusCode = httpURLConnection.getResponseCode();
+                Log.d(TAG, "response code - " + responseStatusCode);
+
+                InputStream inputStream;
+                if(responseStatusCode == HttpURLConnection.HTTP_OK) {
+                    inputStream = httpURLConnection.getInputStream();
+                }
+                else{
+                    inputStream = httpURLConnection.getErrorStream();
+                }
+
+
+                InputStreamReader inputStreamReader = new InputStreamReader(inputStream, "UTF-8");
+                BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
+
+                StringBuilder sb = new StringBuilder();
+                String line;
+
+                while((line = bufferedReader.readLine()) != null){
+                    sb.append(line);
+                }
+
+                bufferedReader.close();
+
+                return sb.toString().trim();
+
+
+            } catch (Exception e) {
+
+                Log.d(TAG, "GetData : Error ", e);
+                errorString = e.toString();
+
+                return null;
+            }
+
         }
-    };
+    }
 }

@@ -8,3 +8,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "BeWith"
 include ':app'
+include ':unityLibrary'
+project(':unityLibrary').projectDir=new File('\\unityLibrary')

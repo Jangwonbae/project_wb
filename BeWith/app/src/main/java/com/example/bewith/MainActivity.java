@@ -4,17 +4,22 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
 import android.Manifest;
+import android.app.ProgressDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.location.Location;
+import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.ListPopupWindow;
 import android.widget.ListView;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -24,6 +29,8 @@ import com.baoyz.swipemenulistview.SwipeMenu;
 import com.baoyz.swipemenulistview.SwipeMenuCreator;
 import com.baoyz.swipemenulistview.SwipeMenuItem;
 import com.baoyz.swipemenulistview.SwipeMenuListView;
+import com.example.bewith.javaclass.Constants;
+import com.example.bewith.javaclass.GlobalList;
 import com.example.bewith.javaclass.UUIDClass;
 import com.example.bewith.listclass.CommentData;
 import com.example.bewith.listclass.MyAdapter;
@@ -40,11 +47,22 @@ import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.libraries.places.api.Places;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.w3c.dom.Text;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
+import java.util.List;
 
 import javax.security.auth.Subject;
 
@@ -63,7 +81,7 @@ public class MainActivity extends AppCompatActivity
     private MyAdapter myAdapter;
     public static ArrayList<CommentData> mData = new ArrayList<>();//내가 만든 commnet 정보
     public static ArrayList<CommentData> rData = new ArrayList<>();//반경 안에 있는 commnet 정보
-    public static ArrayList<CommentData> cData = new ArrayList<>();//comment 정보
+    public static ArrayList<CommentData> cData;//comment 정보
     private double myLatitude;
     private double myLogitude;
     private FusedLocationProviderClient fusedLocationProviderClient;
@@ -73,7 +91,8 @@ public class MainActivity extends AppCompatActivity
     public static final long DEFAULT_LOCATION_REQUEST_FAST_INTERVAL = 2000L;
     public String UUID;
     public int radiusIndex;
-
+    private static String IP_ADDRESS;
+    private Handler handler = new Handler();
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -82,6 +101,7 @@ public class MainActivity extends AppCompatActivity
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
         radiusIndex = 0;
+        IP_ADDRESS= Constants.IP_ADDRESS;
         UUID = UUIDClass.GetDeviceUUID(getApplicationContext());
         Intent data = getIntent();//시작위치 받아옴
         myLatitude = data.getDoubleExtra("latitude", 0);
@@ -89,9 +109,12 @@ public class MainActivity extends AppCompatActivity
 
         no_data = findViewById(R.id.no_data);
 
+        cData=((GlobalList) getApplication() ).getcData();
+
         createFB();//플로팅버튼 생성(go to ar)
+
         createSpinner();//스피너 생성
-        createComment();//Comment 생성하기
+        createComment();//Commen생성 버튼 생성하기
         listview = (SwipeMenuListView) findViewById(R.id.myCommentContents);//떙길 수 잇는 리스트 뷰
         cList = (ListView) findViewById(R.id.commentContents);//레이아웃 리스트뷰
         //땡길 수 있는 리스트뷰 설정
@@ -124,11 +147,11 @@ public class MainActivity extends AppCompatActivity
                 서버에서도 삭제
                  */
                 myAdapter.notifyDataSetChanged();//어뎁터 갱신
-                if (mData.isEmpty()) {
+               /* if (mData.isEmpty()) {
                     no_data.setVisibility(View.VISIBLE);
                 } else {
                     no_data.setVisibility(View.INVISIBLE);
-                }
+                }*/
                 return true;
             }
         });
@@ -142,21 +165,10 @@ public class MainActivity extends AppCompatActivity
     @Override
     protected void onStart() {
         super.onStart();
-        changeList();//리스트뷰에 항목추가
-        if (radiusIndex == 0) {
-            if (mData.isEmpty()) {
-                no_data.setVisibility(View.VISIBLE);
-            } else {
-                no_data.setVisibility(View.INVISIBLE);
-            }
-        } else {
-            if (cData.isEmpty()) {
-                no_data.setVisibility(View.VISIBLE);
-            } else {
-                no_data.setVisibility(View.INVISIBLE);
-            }
-        }
-
+        Toast.makeText(MainActivity.this, "start", Toast.LENGTH_SHORT).show();
+        getMyLocation();
+        UpdateComment updateComment = new UpdateComment();
+        updateComment.execute( "http://" + IP_ADDRESS + "/getComment.php", "");
 
     }
 
@@ -192,7 +204,6 @@ public class MainActivity extends AppCompatActivity
     @Override
     public void onMapReady(final GoogleMap googleMap) {//지도가 준비되면 실행됨
         mMap = googleMap;//구글맵을 전역변수 저장
-
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             //권한 없으면 리턴
             return;
@@ -232,12 +243,10 @@ public class MainActivity extends AppCompatActivity
         fb_reload.setOnClickListener(new View.OnClickListener() {//새로고침 버튼
             @Override
             public void onClick(View v) {
-                /*
-                새로고침 메소드
-                 */
-                //임시
-                changeList();
-                Log.d("ssss", "새로고침 입니다.");
+
+                getMyLocation();
+                UpdateComment updateComment = new UpdateComment();
+                updateComment.execute( "http://" + IP_ADDRESS + "/getComment.php", "");
             }
         });
     }
@@ -269,49 +278,12 @@ public class MainActivity extends AppCompatActivity
                     myAdapter = new MyAdapter(MainActivity.this, mData);//어뎁터에 어레이리스트를 붙임
                     listview.setAdapter(myAdapter);//땡길 수 있는 리스트를 어뎁터에 붙임
                 } else {//다른게 선택되면
-                    int m=0;
-                    rData.clear();
-                    if (cData.isEmpty()) {
-                        no_data.setVisibility(View.VISIBLE);
-                    } else {
-                        no_data.setVisibility(View.INVISIBLE);
-                    }
-                    cList.setVisibility(View.VISIBLE);//일반리스트를 보이게
-                    listview.setVisibility(View.GONE);//땡길 수 있는 리스트를 안보이게
-                    switch (position){
-                        case 1:
-                            m=30;
-                            break;
-                        case 2:
-                            m=100;
-                            break;
-                        case 3:
-                            m=300;
-                            break;
-                        case 4:
-                            m=500;
-                            break;
-                        case 5:
-                            m=1000;
-                            break;
+                   changeRadiusData();
 
-                    }
-                    Location locationA = new Location("point A");//내위치
-                    locationA.setLatitude(myLatitude);
-                    locationA.setLongitude(myLogitude);
-
-                    for(int i = 0; i<cData.size();i++){//선택된 반경 안에 있는지 거리 검사후 리스트 삽입
-                        Location locationB = new Location("point B");
-                        locationB.setLatitude(Double.parseDouble(cData.get(i).latitude));
-                        locationB.setLongitude(Double.parseDouble(cData.get(i).logitude));
-                        double distance = locationA.distanceTo(locationB);
-                        if(distance<m){
-                            rData.add(cData.get(i));
-                        }
-                        }
                     myAdapter = new MyAdapter(MainActivity.this, rData);//어뎁터에 어레이리스트를 붙임
                     cList.setAdapter(myAdapter);//일반 리스트를 어뎁터에 붙임
                     }
+                myAdapter.notifyDataSetChanged();//어뎁터 갱신
                 }
             @Override
             public void onNothingSelected(AdapterView<?> parent) {//무시하면됨(아무 것도 선택안됬을 때)
@@ -319,26 +291,55 @@ public class MainActivity extends AppCompatActivity
         });
     }
 
-    public void changeList() {//리스트뷰에 항목추가
-        cData.clear();
-        mData.clear();
-        /*
-        서버에서 받은 데이터 ArrayList에 삽입하기
-        밑에는 임시
-         */
+    public void changeRadiusData(){
 
-        commentData = new CommentData(0, "e62463bc-c217-378a-bd2e-113b045e4cf0", 0, "내가쓴거", "37.2720317", "127.0728817");
-        cData.add(commentData);
-        commentData = new CommentData(1, "e62463bc-c217-378a-bd2e-113b045e4cf0", 1, "내가쓴거", "35", "127");
-        cData.add(commentData);
-        /*commentData = new CommentData(2, "", 1, "아ㅋㅋ 개꿀딱ㅎㅎㅎㅎㅎㅎgggggggggggddddddddddddgggggggggggggggg", "35", "127");
-        cData.add(commentData);
-        commentData = new CommentData(3, "", 2, "아ㅋㅋ 개꿀딱ㅎㅎㅎㅎㅎㅎggggggggggdddddddddddggggggggggggggggg", "35", "127");
-        cData.add(commentData);
-        commentData = new CommentData(4, "", 1, "아ㅋㅋ 개꿀딱ㅎㅎㅎㅎㅎㅎgggggggggggddddddddddddgggggggggggggggg", "35", "127");
-        cData.add(commentData);
-        commentData = new CommentData(5, "", 1, "아ㅋㅋ 개꿀딱ㅎㅎㅎㅎㅎㅎgggggggggggddddddddddddgggggggggggggggg", "35", "127");
-        cData.add(commentData);*/
+            int m=0;
+            rData.clear();
+            switch (radiusIndex){
+                case 1:
+                    m=30;
+                    break;
+                case 2:
+                    m=100;
+                    break;
+                case 3:
+                    m=300;
+                    break;
+                case 4:
+                    m=500;
+                    break;
+                case 5:
+                    m=1000;
+                    break;
+            }
+
+            Location locationA = new Location("point A");//내위치
+            locationA.setLatitude(myLatitude);
+            locationA.setLongitude(myLogitude);
+
+            for(int i = 0; i<cData.size();i++){//선택된 반경 안에 있는지 거리 검사후 리스트 삽입
+                Location locationB = new Location("point B");
+
+                locationB.setLatitude(Double.parseDouble(cData.get(i).latitude));
+                locationB.setLongitude(Double.parseDouble(cData.get(i).logitude));
+
+                double distance = locationA.distanceTo(locationB);
+                if(distance<m){
+                    rData.add(cData.get(i));
+                }
+            }
+            if (rData.isEmpty()) {
+                no_data.setVisibility(View.VISIBLE);
+            } else {
+                no_data.setVisibility(View.INVISIBLE);
+            }
+            cList.setVisibility(View.VISIBLE);//일반리스트를 보이게
+            listview.setVisibility(View.GONE);//땡길 수 있는 리스트를 안보이게
+
+    }
+
+    public void changeList() {//리스트뷰에 항목추가
+        mData.clear();
         for (int i = 0; i < cData.size(); i++) {
             if (cData.get(i).UUID.equals(UUID)) {
                 mData.add(cData.get(i));
@@ -379,4 +380,210 @@ public class MainActivity extends AppCompatActivity
 
         }
     };
+    public class UpdateComment extends AsyncTask<String, Void, String> {
+        String errorString = null;
+        private String mJsonString;
+        ProgressDialog progressDialog;
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+
+            progressDialog = ProgressDialog.show(MainActivity.this,"Please Wait", null, true, true);
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+            if (result == null){
+            }
+            else {
+                mJsonString = result;
+                showResult();
+            }
+
+        }
+        private void showResult(){
+
+            String TAG_JSON="comment";
+            String TAG_ID = "id";
+            String TAG_UUID = "UUID";
+            String TAG_category = "category";
+            String TAG_text = "text";
+            String TAG_STR_LATITUDE = "str_latitude";
+            String TAG_STR_LONGITUDE ="str_longitude";
+
+            ((GlobalList) getApplication() ).cleancData();
+
+            try {
+                JSONObject jsonObject = new JSONObject(mJsonString);
+                JSONArray jsonArray = jsonObject.getJSONArray(TAG_JSON);
+
+                for(int i=0;i<jsonArray.length();i++){
+
+                    JSONObject item = jsonArray.getJSONObject(i);
+                    int id = item.getInt(TAG_ID);
+                    String UUID = item.getString(TAG_UUID);
+                    int category=0;
+                    switch (item.getString(TAG_category)){
+                        case "리뷰":
+                            category = 0;
+                            break;
+                        case "꿀팁":
+                            category = 1;
+                            break;
+                        case "기록":
+                            category = 2;
+                            break;
+
+                    }
+                    String text = item.getString(TAG_text);
+                    String str_latitude = item.getString(TAG_STR_LATITUDE);
+                    String str_longitude = item.getString(TAG_STR_LONGITUDE);
+
+                    ((GlobalList) getApplication() ).setcData(new CommentData(id,UUID,category,text,str_latitude,str_longitude));
+                }
+
+            } catch (JSONException e) {
+            }
+            //cData.clear();
+            //???????????????????????????????????????????????????????????????????????????????????????????????????????
+            cData=((GlobalList) getApplication() ).getcData();
+
+            if(radiusIndex != 0){//반경으로 설정되어 있으면
+                int m=0;
+                rData.clear();
+                switch (radiusIndex){
+                    case 1:
+                        m=30;
+                        break;
+                    case 2:
+                        m=100;
+                        break;
+                    case 3:
+                        m=300;
+                        break;
+                    case 4:
+                        m=500;
+                        break;
+                    case 5:
+                        m=1000;
+                        break;
+                }
+
+                Location locationA = new Location("point A");//내위치
+                locationA.setLatitude(myLatitude);
+                locationA.setLongitude(myLogitude);
+
+                for(int i = 0; i<cData.size();i++){//선택된 반경 안에 있는지 거리 검사후 리스트 삽입
+                    Location locationB = new Location("point B");
+
+                    locationB.setLatitude(Double.parseDouble(cData.get(i).latitude));
+                    locationB.setLongitude(Double.parseDouble(cData.get(i).logitude));
+                    double distance = locationA.distanceTo(locationB);
+                    if(distance<m){
+                        rData.add(cData.get(i));
+                    }
+                }
+                if (rData.isEmpty()) {
+                    no_data.setVisibility(View.VISIBLE);
+                } else {
+                    no_data.setVisibility(View.INVISIBLE);
+                }
+                cList.setVisibility(View.VISIBLE);//일반리스트를 보이게
+                listview.setVisibility(View.GONE);//땡길 수 있는 리스트를 안보이게
+                myAdapter = new MyAdapter(MainActivity.this, rData);//어뎁터에 어레이리스트를 붙임
+                cList.setAdapter(myAdapter);
+            }
+            else{//내 Comment로 설정되어 있으면
+                mData.clear();
+                for (int i = 0; i < cData.size(); i++) {//My Comment array갱신
+                    if (cData.get(i).UUID.equals(UUID)) {
+                        mData.add(cData.get(i));
+                    }
+                }
+                if (mData.isEmpty()) {
+                    no_data.setVisibility(View.VISIBLE);
+                } else {
+                    no_data.setVisibility(View.INVISIBLE);
+                }
+                listview.setVisibility(View.VISIBLE);//땡길 수 있는 리스트를 보이게
+                cList.setVisibility(View.GONE);//일반리스트를 보이게
+                myAdapter = new MyAdapter(MainActivity.this, mData);//어뎁터에 어레이리스트를 붙임
+                listview.setAdapter(myAdapter);
+            }
+            myAdapter.notifyDataSetChanged();//어뎁터 갱신
+            progressDialog.dismiss();
+        }
+
+        @Override
+        protected String doInBackground(String... params) {
+
+            String serverURL = params[0];
+            String postParameters = params[1];
+
+            try {
+
+                URL url = new URL(serverURL);
+                HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
+
+
+                httpURLConnection.setReadTimeout(5000);
+                httpURLConnection.setConnectTimeout(5000);
+                httpURLConnection.setRequestMethod("POST");
+                httpURLConnection.setDoInput(true);
+                httpURLConnection.connect();
+
+
+                OutputStream outputStream = httpURLConnection.getOutputStream();
+                outputStream.write(postParameters.getBytes("UTF-8"));
+                outputStream.flush();
+                outputStream.close();
+
+
+                int responseStatusCode = httpURLConnection.getResponseCode();
+
+                InputStream inputStream;
+                if(responseStatusCode == HttpURLConnection.HTTP_OK) {
+                    inputStream = httpURLConnection.getInputStream();
+                }
+                else{
+                    inputStream = httpURLConnection.getErrorStream();
+                }
+                InputStreamReader inputStreamReader = new InputStreamReader(inputStream, "UTF-8");
+                BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
+
+                StringBuilder sb = new StringBuilder();
+                String line;
+
+                while((line = bufferedReader.readLine()) != null){
+                    sb.append(line);
+                }
+
+                bufferedReader.close();
+
+                return sb.toString().trim();
+
+
+            } catch (Exception e) {
+
+                errorString = e.toString();
+
+                return null;
+            }
+
+        }
+    }
+    public void updateArray(){
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                if(radiusIndex != 0){
+                    myAdapter = new MyAdapter(MainActivity.this, rData);//어뎁터에 어레이리스트를 붙임
+                    cList.setAdapter(myAdapter);//일반 리스트를 어뎁터에 붙임
+                }
+
+                myAdapter.notifyDataSetChanged();//어뎁터 갱신
+            }
+        });
+    }
 }
