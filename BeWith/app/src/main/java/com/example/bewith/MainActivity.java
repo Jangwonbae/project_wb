@@ -4,6 +4,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
@@ -49,6 +51,7 @@ import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.libraries.places.api.Places;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.unity3d.player.UnityPlayerActivity;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -142,16 +145,9 @@ public class MainActivity extends AppCompatActivity
         listview.setOnMenuItemClickListener(new SwipeMenuListView.OnMenuItemClickListener() {//삭제메소드
             @Override
             public boolean onMenuItemClick(int position, SwipeMenu menu, int index) {
-                mData.remove(position);
-                /*
-                서버에서도 삭제
-                 */
-                myAdapter.notifyDataSetChanged();//어뎁터 갱신
-               /* if (mData.isEmpty()) {
-                    no_data.setVisibility(View.VISIBLE);
-                } else {
-                    no_data.setVisibility(View.INVISIBLE);
-                }*/
+                DeleteComment deleteComment = new DeleteComment();
+                deleteComment.execute( "http://" + IP_ADDRESS + "/deleteComment.php", Integer.toString(mData.get(position)._id));
+
                 return true;
             }
         });
@@ -165,7 +161,6 @@ public class MainActivity extends AppCompatActivity
     @Override
     protected void onStart() {
         super.onStart();
-        Toast.makeText(MainActivity.this, "start", Toast.LENGTH_SHORT).show();
         getMyLocation();
         UpdateComment updateComment = new UpdateComment();
         updateComment.execute( "http://" + IP_ADDRESS + "/getComment.php", "");
@@ -235,15 +230,13 @@ public class MainActivity extends AppCompatActivity
         fb_ar.setOnClickListener(new View.OnClickListener() {//AR카메라 이동 버튼
             @Override
             public void onClick(View v) {
-                //Intent intent = new Intent(getActivity(), UnityPlayerActivity.class);
-                // startActivity(intent);
-                Log.d("ssss", "AR카메라로 이동합니다.");
+                Intent intent = new Intent(MainActivity.this, UnityPlayerActivity.class);
+                 startActivity(intent);
             }
         });
         fb_reload.setOnClickListener(new View.OnClickListener() {//새로고침 버튼
             @Override
             public void onClick(View v) {
-
                 getMyLocation();
                 UpdateComment updateComment = new UpdateComment();
                 updateComment.execute( "http://" + IP_ADDRESS + "/getComment.php", "");
@@ -573,17 +566,82 @@ public class MainActivity extends AppCompatActivity
 
         }
     }
-    public void updateArray(){
-        handler.post(new Runnable() {
-            @Override
-            public void run() {
-                if(radiusIndex != 0){
-                    myAdapter = new MyAdapter(MainActivity.this, rData);//어뎁터에 어레이리스트를 붙임
-                    cList.setAdapter(myAdapter);//일반 리스트를 어뎁터에 붙임
+    public class DeleteComment  extends AsyncTask<String, Void, String> {
+        private ProgressDialog progressDialog;
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+
+        }
+
+
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+            
+            getMyLocation();
+            UpdateComment updateComment = new UpdateComment();
+            updateComment.execute( "http://" + IP_ADDRESS + "/getComment.php", "");
+        }
+
+        @SuppressLint("WrongThread")
+        @Override
+        protected String doInBackground(String... params) {
+            String result;
+            String id = (String)params[1];
+
+            String serverURL = (String)params[0];
+            String postParameters = "id=" + id  ;
+
+            try {
+
+                URL url = new URL(serverURL);
+                HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
+
+
+                httpURLConnection.setReadTimeout(5000);
+                httpURLConnection.setConnectTimeout(5000);
+                httpURLConnection.setRequestMethod("POST");
+                httpURLConnection.connect();
+
+
+                OutputStream outputStream = httpURLConnection.getOutputStream();
+                outputStream.write(postParameters.getBytes("UTF-8"));
+                outputStream.flush();
+                outputStream.close();
+
+
+                int responseStatusCode = httpURLConnection.getResponseCode();
+
+                InputStream inputStream;
+                if(responseStatusCode == HttpURLConnection.HTTP_OK) {
+                    inputStream = httpURLConnection.getInputStream();
+                }
+                else{
+                    inputStream = httpURLConnection.getErrorStream();
                 }
 
-                myAdapter.notifyDataSetChanged();//어뎁터 갱신
+
+                InputStreamReader inputStreamReader = new InputStreamReader(inputStream, "UTF-8");
+                BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
+
+                StringBuilder sb = new StringBuilder();
+                String line = null;
+
+                while((line = bufferedReader.readLine()) != null){
+                    sb.append(line);
+                }
+
+
+                bufferedReader.close();
+
+                return sb.toString();
+
+            } catch (Exception e) {
+                return new String("Error: " + e.getMessage());
             }
-        });
+
+        }
     }
 }
